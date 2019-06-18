@@ -333,7 +333,7 @@ class MBConvBlock(object):
     kernel_size = self._block_args.kernel_size
     
     # Depth-wise convolution phase:
-    self._depthwise_conv = OctConv2D(
+    self._depthwise_conv = OctConv2D( #TODO Update filter size and add alpha
         [kernel_size, kernel_size],
         strides=self._block_args.strides,
         depthwise_initializer=conv_kernel_initializer,
@@ -377,37 +377,26 @@ class MBConvBlock(object):
         momentum=self._batch_norm_momentum,
         epsilon=self._batch_norm_epsilon)
 
-  def _call_se(self, input_tensor):
+  def _call_se(self, input_tensors):
     """Call Squeeze and Excitation layer.
     Args:
-      input_tensor: Tensor, a single input tensor for Squeeze/Excitation layer.
+      input_tensors: High and Low tensors for Squeeze/Excitation layer.
     Returns:
       A output tensor, which should have the same shape as input.
     """
-    se_tensor = tf.reduce_mean(input_tensor, self._spatial_dims, keepdims=True)
-    if self._block_args.expand_ratio != 1:
-      low = layers.AveragePooling2D(2)(se_tensor)
-      high, low = self._se_reduce([se_tensor,low])
-      high = relu_fn(high, training=training)
-      low = relu_fn(low, training=training)
-    else:
-      high = se_tensor
-      low = layers.AveragePooling2D(2)(se_tensor)
-    low = layers.UpSampling2D(size=(2, 2))(high)
-    y = layers. Concatenate()([high, low])
-    if self._block_args.expand_ratio != 1:
-      low = layers.AveragePooling2D(2)(y)
-      high, low = self._se_expand([y,low])
-      high = relu_fn(high, training=training)
-      low = relu_fn(low, training=training)
-    else:
-      high = y
-      low = layers.AveragePooling2D(2)(y)
-    low = layers.UpSampling2D(size=(2, 2))(high)
-    se_tensor = layers.Concatenate()([high, low])
+    input_high,input_low = input_tensors
+    se_high = tf.reduce_mean(input_high, self._spatial_dims, keepdims=True)
+    se_low = tf.reduce_mean(input_low, self._spatial_dims, keepdims=True)
+    # if self._block_args.expand_ratio != 1:
+    se_high, se_low = self._se_reduce([se_high,se_low])
+    se_high = relu_fn(se_high, training=training)
+    se_low = relu_fn(se_low, training=training)
+    se_high, se_low = self._se_expand([se_high,se_low])
+    se_high = tf.sigmoid(se_high) * input_high
+    se_low = tf.sigmoid(se_low) * input_low
     tf.logging.info('Built Squeeze and Excitation with tensor shape: %s' %
-                    (se_tensor.shape))
-    return tf.sigmoid(se_tensor) * input_tensor
+                    (se_high.shape))
+    return se_high, se_low
 
   def call(self, inputs, training=True, drop_connect_rate=None):
     """Implementation of call().
@@ -418,32 +407,34 @@ class MBConvBlock(object):
     Returns:
       A output tensor.
     """
-    tf.logging.info('Block input: %s shape: %s' % (inputs.name, inputs.shape))
+    high = inputs
+    low = layers.AveragePooling2D(2)(inputs)
+
+    tf.logging.info('Block input: %s shape: %s' % (high.name, high.shape))
     if self._block_args.expand_ratio != 1:
-      low = layers.AveragePooling2D(2)(inputs)
       high, low = self._expand_conv([inputs,low])
       high = relu_fn(self._bn0(high, training=training))
       low = relu_fn(self._bn0(low, training=training))
     else:
-      high = inputs
-      low = layers.AveragePooling2D(2)(inputs)
+      pass
 
-    tf.logging.info('Expand: %s shape: %s' % (x.name, x.shape))
+    tf.logging.info('Expand: %s shape: %s' % (high.name, high.shape))
 
-    high = relu_fn(self._bn1(self._depthwise_conv(high), training=training))
-    low = relu_fn(self._bn1(self._depthwise_conv(low), training=training))
-    tf.logging.info('DWConv: %s shape: %s' % (x.name, x.shape))
+    high, low = self._depthwise_conv([high,low]), training=training)
+    high = relu_fn(self._bn1(high))
+    low = relu_fn(self._bn1(low))
+    tf.logging.info('DWConv: %s shape: %s' % (high.name, high.shape))
 
     if self.has_se:
       with tf.variable_scope('se'):
-        x = self._call_se(x)
+        high,low = self._call_se([high,low])
 
-    self.endpoints = {'expansion_output': x}
-    high, low = self._project_conv([inputs,low])
+    self.endpoints = {'expansion_output': high}
+    high, low = self._project_conv([high,low])
     high = self._bn2(high, training=training)
     low = self._bn2(low, training=training)
     
-    low = layers.UpSampling2D(size=(2, 2))(high)
+    low = layers.UpSampling2D(size=(2, 2))(low)
     x = layers.Concatenate()([high, low])
     if self._block_args.id_skip:
       if all(
@@ -563,7 +554,7 @@ class Model(tf.keras.Model):
         high, low = self._conv_stem([inputs, low])
         high = relu_fn(self._bn0(high, training=training))
         low = relu_fn(self._bn0(low, training=training))
-        low = layers.UpSampling2D(size=(2, 2))(high)
+        low = layers.UpSampling2D(size=(2, 2))(low)
         outputs = layers.Concatenate()([high, low])
     tf.logging.info('Built stem layers with output shape: %s' % outputs.shape)
     self.endpoints['stem'] = outputs
@@ -597,18 +588,12 @@ class Model(tf.keras.Model):
     if not features_only:
       # Calls final layers and returns logits.
       with tf.variable_scope('head'):
-        #should this if statement exist here?
-        if self._block_args.expand_ratio != 1:
-            low = layers.AveragePooling2D(2)(outputs)
-            high, low = self._conv_head([outputs, low])
-            high = relu_fn(self._bn1(high, training=training))
-            low = relu_fn(self._bn1(low, training=training))
-        else:
-            high = outputs
-            low = layers.AveragePooling2D(2)(outputs)
-        low = layers.UpSampling2D(size=(2, 2))(high)
+        low = layers.AveragePooling2D(2)(outputs)
+        high, low = self._conv_head([outputs, low])
+        high = relu_fn(self._bn1(high, training=training))
+        low = relu_fn(self._bn1(low, training=training))
+        low = layers.UpSampling2D(size=(2, 2))(low)
         outputs = layers.Concatenate()([high, low])
-        #keep avg pooling?
         outputs = self._avg_pooling(outputs)
         if self._dropout:
           outputs = self._dropout(outputs, training=training)
