@@ -8,10 +8,10 @@
     * Download_Imagenet.sh
     * Run_Efficientnet.sh (Contains the command line args stuff for actually running the main.py)
 
-New file by Sean: 
+* New file by Sean: 
    * efficientoctave_model.py
 
-Google Filestructure:
+* Google Filestructure:
     * main.py imports
         * efficientnet_builder
         * imagenet_input
