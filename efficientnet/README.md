@@ -3,7 +3,7 @@
 Note:
 - This repo is under development.
 
-We develop Ocatave EfficientNets based on AutoML, Compound Scaling and Octave Convolution. In particular, we first use [AutoML Mobile framework](https://ai.googleblog.com/2018/08/mnasnet-towards-automating-design-of.html) to develop a mobile-size baseline network, named as EfficientNet-B0; Then, we use the compound scaling method to scale up this baseline to obtain EfficientNet-B1 to B7.
+We develop Ocatave EfficientNets based on AutoML, Compound Scaling and Octave Convolution. In particular, we first use [AutoML Mobile framework](https://ai.googleblog.com/2018/08/mnasnet-towards-automating-design-of.html) to develop a mobile-size baseline network, named as EfficientNet-B0; Then, we use the compound scaling method to scale up this baseline to obtain Octave EfficientNet-B1 to B7.
 
 ## EfficientNets
 
@@ -64,11 +64,6 @@ Then train the model:
 For more instructions, please refer to our tutorial: https://cloud.google.com/tpu/docs/tutorials/efficientnet
 
 ## 3. Octave Convolution
-MXNet implementation for:
-
-[Drop an Octave: Reducing Spatial Redundancy in Convolutional Neural Networks with Octave Convolution](https://arxiv.org/abs/1904.05049)
-
-## 4. Citation
 ```
 @article{chen2019drop,
   title={Drop an Octave: Reducing Spatial Redundancy in Convolutional Neural Networks with Octave Convolution},
@@ -78,12 +73,12 @@ MXNet implementation for:
 }
 ```
 
-## 5. Reference
+## 4. References
 [1] He K, et al "Identity Mappings in Deep Residual Networks".
 
 [2] Christian S, et al "Rethinking the Inception Architecture for Computer Vision"
 
 [3] Zhang H, et al. "mixup: Beyond empirical risk minimization.".
 
-## 6. License
+## 5. License
 The code and the models are MIT licensed, as found in the LICENSE file.
