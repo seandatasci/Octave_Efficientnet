@@ -1,4 +1,9 @@
-# EfficientNets
+# Octave EfficientNet
+
+Note:
+- This repo is under development.
+
+## EfficientNets
 
 [1] Mingxing Tan and Quoc V. Le.  EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks. ICML 2019.
    Arxiv link: https://arxiv.org/abs/1905.11946.
@@ -46,16 +51,6 @@ Please refer to the following colab for more instructions on how to obtain and u
   * [`eval_ckpt_example.ipynb`](eval_ckpt_example.ipynb): A colab example to load
  EfficientNet pretrained checkpoints files and use the restored model to classify images.
 
-
-## 3. Training EfficientNets on TPUs.
-
-
-To train this model on Cloud TPU, you will need:
-
-   * A GCE VM instance with an associated Cloud TPU resource
-   * A GCS bucket to store your training checkpoints (the "model directory")
-   * Install TensorFlow version >= 1.13 for both GCE VM and Cloud.
-
 Then train the model:
 
     $ export PYTHONPATH="$PYTHONPATH:/path/to/models"
@@ -67,3 +62,35 @@ Then train the model:
 
 
 For more instructions, please refer to our tutorial: https://cloud.google.com/tpu/docs/tutorials/efficientnet
+
+# Octave Convolution
+MXNet implementation for:
+
+[Drop an Octave: Reducing Spatial Redundancy in Convolutional Neural Networks with Octave Convolution](https://arxiv.org/abs/1904.05049)
+
+## Citation
+```
+@article{chen2019drop,
+  title={Drop an Octave: Reducing Spatial Redundancy in Convolutional Neural Networks with Octave Convolution},
+  author={Chen, Yunpeng and Fan, Haoqi and Xu, Bing and Yan, Zhicheng and Kalantidis, Yannis and Rohrbach, Marcus and Yan, Shuicheng and Feng, Jiashi},
+  journal={arXiv preprint arXiv:1904.05049},
+  year={2019}
+}
+```
+
+
+## Acknowledgement
+- Thanks [MXNet](https://mxnet.incubator.apache.org/), [Gluon-CV](https://gluon-cv.mxnet.io/) and [TVM](https://tvm.ai/)!
+- Thanks [@Ldpe2G](https://github.com/Ldpe2G) for sharing the code for calculating the #FLOPs \([`link`](https://github.com/Ldpe2G/DeepLearningForFun/tree/master/Mxnet-Scala/UsefulTools)\)
+- Thanks Min Lin (Mila), Xin Zhao (Qihoo Inc.), Tao Wang (NUS) for helpful discussions on the code development.
+
+
+## Reference
+[1] He K, et al "Identity Mappings in Deep Residual Networks".
+
+[2] Christian S, et al "Rethinking the Inception Architecture for Computer Vision"
+
+[3] Zhang H, et al. "mixup: Beyond empirical risk minimization.".
+
+## License
+The code and the models are MIT licensed, as found in the LICENSE file.
