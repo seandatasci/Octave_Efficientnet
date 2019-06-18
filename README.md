@@ -1,6 +1,6 @@
 ## Octave-Efficientnet
 
-* Files created by me:
+* Files created by Antony:
     * prepare_imagenet.py
     * prep_tiny_imagenet.py
     * test.py
@@ -8,7 +8,7 @@
     * Download_Imagenet.sh
     * Run_Efficientnet.sh (Contains the command line args stuff for actually running the main.py)
 
-New file by you: efficientoctave_model.py
+New file by Sean: efficientoctave_model.py
 
 * Google Filestructure:
     * main.py imports
