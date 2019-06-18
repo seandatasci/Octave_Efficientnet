@@ -559,15 +559,10 @@ class Model(tf.keras.Model):
     self.endpoints = {}
     # Calls Stem layers
     with tf.variable_scope('stem'):
-        #should this if statement exist here?
-        if self._block_args.expand_ratio != 1:
-            low = layers.AveragePooling2D(2)(inputs)
-            high, low = self._conv_stem([inputs, low])
-            high = relu_fn(self._bn0(high, training=training))
-            low = relu_fn(self._bn0(low, training=training))
-        else:
-            high = inputs
-            low = layers.AveragePooling2D(2)(inputs)
+        low = layers.AveragePooling2D(2)(inputs)
+        high, low = self._conv_stem([inputs, low])
+        high = relu_fn(self._bn0(high, training=training))
+        low = relu_fn(self._bn0(low, training=training))
         low = layers.UpSampling2D(size=(2, 2))(high)
         outputs = layers.Concatenate()([high, low])
     tf.logging.info('Built stem layers with output shape: %s' % outputs.shape)
