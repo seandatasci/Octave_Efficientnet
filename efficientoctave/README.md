@@ -61,24 +61,19 @@ Then train the model:
     # DATA_DIR is a GCS location to which both the GCE VM and associated Cloud TPU have read access.
 
 
-For more instructions, please refer to our tutorial: https://cloud.google.com/tpu/docs/tutorials/efficientnet
+For more instructions, please refer to a tutorial: https://cloud.google.com/tpu/docs/tutorials/efficientnet
 
 ## 3. Octave Convolution
-```
-@article{chen2019drop,
-  title={Drop an Octave: Reducing Spatial Redundancy in Convolutional Neural Networks with Octave Convolution},
-  author={Chen, Yunpeng and Fan, Haoqi and Xu, Bing and Yan, Zhicheng and Kalantidis, Yannis and Rohrbach, Marcus and Yan, Shuicheng and Feng, Jiashi},
-  journal={arXiv preprint arXiv:1904.05049},
-  year={2019}
-}
-```
+[2] Chen, Yunpeng and Fan.  Drop an Octave: Reducing Spatial Redundancy in Convolutional Neural Networks with Octave Convolution.
+   Arxiv link: https://arxiv.org/abs/1904.05049.
+
 
 ## 4. References
-[1] He K, et al "Identity Mappings in Deep Residual Networks".
+[3] He K, et al "Identity Mappings in Deep Residual Networks".
 
-[2] Christian S, et al "Rethinking the Inception Architecture for Computer Vision"
+[4] Christian S, et al "Rethinking the Inception Architecture for Computer Vision"
 
-[3] Zhang H, et al. "mixup: Beyond empirical risk minimization.".
+[5] Zhang H, et al. "mixup: Beyond empirical risk minimization.".
 
 ## 5. License
 The code and the models are MIT licensed, as found in the LICENSE file.
