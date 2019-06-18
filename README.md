@@ -11,7 +11,7 @@
 New file by Sean: 
    * efficientoctave_model.py
 
-* Google Filestructure:
+Google Filestructure:
     * main.py imports
         * efficientnet_builder
         * imagenet_input
