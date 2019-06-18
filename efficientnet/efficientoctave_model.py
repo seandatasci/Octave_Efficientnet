@@ -11,16 +11,16 @@ import tensorflow as tf
 import utils
 from tensorflow.keras import layers
 from tensorflow.keras.models import Model
-from tensorflow.keras.regularizers import l2
 import tensorflow.keras.backend as K
 #activation function
 relu_fn = tf.nn.swish
 
+
 class OctConv2D(layers.Layer):
-    def __init__(self, filters, alpha, kernel_size=(3,3), strides=(1,1), 
-                    padding="same", kernel_initializer='conv_kernel_initializer',
-                    kernel_regularizer=l2(1e-4), kernel_constraint=None,
-                    **kwargs):
+    def __init__(self, filters, alpha, kernel_size=(3, 3), strides=(1, 1),
+                 padding="same", kernel_initializer='conv_kernel_initializer',
+                 kernel_regularizer=None, kernel_constraint=None,
+                 use_depthwise=False, **kwargs):
         """
         OctConv2D : Octave Convolution for image( rank 4 tensors)
         filters: # output channels for low + high
@@ -40,11 +40,12 @@ class OctConv2D(layers.Layer):
         self.kernel_initializer = kernel_initializer
         self.kernel_regularizer = kernel_regularizer
         self.kernel_constraint = kernel_constraint
-        # -> Low Channels 
+        self.use_depthwise = use_depthwise
+        # -> Low Channels
         self.low_channels = int(self.filters * self.alpha)
         # -> High Channles
         self.high_channels = self.filters - self.low_channels
-        
+
     def build(self, input_shape):
         assert len(input_shape) == 2
         assert len(input_shape[0]) == 4 and len(input_shape[1]) == 4
@@ -61,54 +62,94 @@ class OctConv2D(layers.Layer):
         low_in = int(input_shape[1][3])
 
         # High -> High
-        self.high_to_high_kernel = self.add_weight(name="high_to_high_kernel", 
-                                    shape=(*self.kernel_size, high_in, self.high_channels),
-                                    initializer=self.kernel_initializer,
-                                    regularizer=self.kernel_regularizer,
-                                    constraint=self.kernel_constraint)
+        self.high_to_high_kernel = self.add_weight(name="high_to_high_kernel",
+                                                   shape=(
+                                                   *self.kernel_size, high_in,
+                                                   self.high_channels),
+                                                   initializer=self.kernel_initializer,
+                                                   regularizer=self.kernel_regularizer,
+                                                   constraint=self.kernel_constraint)
         # High -> Low
-        self.high_to_low_kernel  = self.add_weight(name="high_to_low_kernel", 
-                                    shape=(*self.kernel_size, high_in, self.low_channels),
-                                    initializer=self.kernel_initializer,
-                                    regularizer=self.kernel_regularizer,
-                                    constraint=self.kernel_constraint)
+        self.high_to_low_kernel = self.add_weight(name="high_to_low_kernel",
+                                                  shape=(
+                                                  *self.kernel_size, high_in,
+                                                  self.low_channels),
+                                                  initializer=self.kernel_initializer,
+                                                  regularizer=self.kernel_regularizer,
+                                                  constraint=self.kernel_constraint)
         # Low -> High
-        self.low_to_high_kernel  = self.add_weight(name="low_to_high_kernel", 
-                                    shape=(*self.kernel_size, low_in, self.high_channels),
-                                    initializer=self.kernel_initializer,
-                                    regularizer=self.kernel_regularizer,
-                                    constraint=self.kernel_constraint)
+        self.low_to_high_kernel = self.add_weight(name="low_to_high_kernel",
+                                                  shape=(
+                                                  *self.kernel_size, low_in,
+                                                  self.high_channels),
+                                                  initializer=self.kernel_initializer,
+                                                  regularizer=self.kernel_regularizer,
+                                                  constraint=self.kernel_constraint)
         # Low -> Low
-        self.low_to_low_kernel   = self.add_weight(name="low_to_low_kernel", 
-                                    shape=(*self.kernel_size, low_in, self.low_channels),
-                                    initializer=self.kernel_initializer,
-                                    regularizer=self.kernel_regularizer,
-                                    constraint=self.kernel_constraint)
+        self.low_to_low_kernel = self.add_weight(name="low_to_low_kernel",
+                                                 shape=(
+                                                 *self.kernel_size, low_in,
+                                                 self.low_channels),
+                                                 initializer=self.kernel_initializer,
+                                                 regularizer=self.kernel_regularizer,
+                                                 constraint=self.kernel_constraint)
         super().build(input_shape)
 
     def call(self, inputs):
         # Input = [X^H, X^L]
         assert len(inputs) == 2
         high_input, low_input = inputs
-        # High -> High conv
-        high_to_high = K.conv2d(high_input, self.high_to_high_kernel,
-                                strides=self.strides, padding=self.padding,
-                                data_format="channels_last")
-        # High -> Low conv
-        high_to_low  = K.pool2d(high_input, (2,2), strides=(2,2), pool_mode="avg")
-        high_to_low  = K.conv2d(high_to_low, self.high_to_low_kernel,
-                                strides=self.strides, padding=self.padding,
-                                data_format="channels_last")
-        # Low -> High conv
-        low_to_high  = K.conv2d(low_input, self.low_to_high_kernel,
-                                strides=self.strides, padding=self.padding,
-                                data_format="channels_last")
-        low_to_high = K.repeat_elements(low_to_high, 2, axis=1) # Nearest Neighbor Upsampling
-        low_to_high = K.repeat_elements(low_to_high, 2, axis=2)
-        # Low -> Low conv
-        low_to_low   = K.conv2d(low_input, self.low_to_low_kernel,
-                                strides=self.strides, padding=self.padding,
-                                data_format="channels_last")
+
+        if self.use_depthwise:
+            # High -> High conv
+            high_to_high = K.conv2d(high_input, self.high_to_high_kernel,
+                                    strides=self.strides, padding=self.padding,
+                                    data_format="channels_last")
+            # High -> Low conv
+            high_to_low = K.pool2d(high_input, (2, 2), strides=(2, 2),
+                                   pool_mode="avg")
+            high_to_low = K.conv2d(high_to_low, self.high_to_low_kernel,
+                                   strides=self.strides, padding=self.padding,
+                                   data_format="channels_last")
+            # Low -> High conv
+            low_to_high = K.conv2d(low_input, self.low_to_high_kernel,
+                                   strides=self.strides, padding=self.padding,
+                                   data_format="channels_last")
+            low_to_high = K.repeat_elements(low_to_high, 2,
+                                            axis=1)  # Nearest Neighbor Upsampling
+            low_to_high = K.repeat_elements(low_to_high, 2, axis=2)
+            # Low -> Low conv
+            low_to_low = K.conv2d(low_input, self.low_to_low_kernel,
+                                  strides=self.strides, padding=self.padding,
+                                  data_format="channels_last")
+        else:
+            # High -> High conv
+            high_to_high = K.DepthwiseConv2D(high_input,
+                                             self.high_to_high_kernel,
+                                             strides=self.strides,
+                                             padding=self.padding,
+                                             data_format="channels_last")
+            # High -> Low conv
+            high_to_low = K.pool2d(high_input, (2, 2), strides=(2, 2),
+                                   pool_mode="avg")
+            high_to_low = K.DepthwiseConv2D(high_to_low,
+                                            self.high_to_low_kernel,
+                                            strides=self.strides,
+                                            padding=self.padding,
+                                            data_format="channels_last")
+            # Low -> High conv
+            low_to_high = K.DepthwiseConv2D(low_input, self.low_to_high_kernel,
+                                            strides=self.strides,
+                                            padding=self.padding,
+                                            data_format="channels_last")
+            low_to_high = K.repeat_elements(low_to_high, 2,
+                                            axis=1)  # Nearest Neighbor Upsampling
+            low_to_high = K.repeat_elements(low_to_high, 2, axis=2)
+            # Low -> Low conv
+            low_to_low = K.DepthwiseConv2D(low_input, self.low_to_low_kernel,
+                                           strides=self.strides,
+                                           padding=self.padding,
+                                           data_format="channels_last")
         # Cross Add
         high_add = high_to_high + low_to_high
         low_add = high_to_low + low_to_low
@@ -131,9 +172,11 @@ class OctConv2D(layers.Layer):
             "padding": self.padding,
             "kernel_initializer": self.kernel_initializer,
             "kernel_regularizer": self.kernel_regularizer,
-            "kernel_constraint": self.kernel_constraint,            
+            "kernel_constraint": self.kernel_constraint,
         }
         return out_config
+
+    
 
 GlobalParams = collections.namedtuple('GlobalParams', [
     'batch_norm_momentum', 'batch_norm_epsilon', 'dropout_rate', 'data_format',
@@ -275,12 +318,12 @@ class MBConvBlock(object):
     kernel_size = self._block_args.kernel_size
     
     # Depth-wise convolution phase:
-    self._depthwise_conv = utils.DepthwiseConv2D(
+    self._depthwise_conv = OctConv2D(
         [kernel_size, kernel_size],
         strides=self._block_args.strides,
         depthwise_initializer=conv_kernel_initializer,
         padding='same',
-        use_bias=False)
+        use_bias=False,use_depthwise=True)
     self._bn1 = batchnorm(
         axis=self._channel_axis,
         momentum=self._batch_norm_momentum,
@@ -336,7 +379,7 @@ class MBConvBlock(object):
       high = se_tensor
       low = layers.AveragePooling2D(2)(se_tensor)
     low = layers.UpSampling2D(size=(2, 2))(high)
-    y = layers.Concatenate()([high, low])
+    y = layers. Concatenate()([high, low])
     if self._block_args.expand_ratio != 1:
       low = layers.AveragePooling2D(2)(y)
       high, low = self._se_expand([y,low])
@@ -502,7 +545,7 @@ class Model(tf.keras.Model):
     # Calls Stem layers
     with tf.variable_scope('stem'):
         #should this if statement exist here?
-        if self._blocks_args.expand_ratio != 1:
+        if self._block_args.expand_ratio != 1:
             low = layers.AveragePooling2D(2)(inputs)
             high, low = self._conv_stem([inputs, low])
             high = relu_fn(self._bn0(high, training=training))
@@ -545,7 +588,7 @@ class Model(tf.keras.Model):
       # Calls final layers and returns logits.
       with tf.variable_scope('head'):
         #should this if statement exist here?
-        if self._blocks_args.expand_ratio != 1:
+        if self._block_args.expand_ratio != 1:
             low = layers.AveragePooling2D(2)(outputs)
             high, low = self._conv_head([outputs, low])
             high = relu_fn(self._bn1(high, training=training))
