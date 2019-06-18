@@ -64,7 +64,7 @@ Then train the model:
 For more instructions, please refer to a tutorial: https://cloud.google.com/tpu/docs/tutorials/efficientnet
 
 ## 3. Octave Convolution
-[2] Chen, Yunpeng and Fan  Drop an Octave: Reducing Spatial Redundancy in Convolutional Neural Networks with Octave Convolution.
+[2] Chen, Yunpeng and Fan.  Drop an Octave: Reducing Spatial Redundancy in Convolutional Neural Networks with Octave Convolution.
    Arxiv link: https://arxiv.org/abs/1904.05049.
 
 
