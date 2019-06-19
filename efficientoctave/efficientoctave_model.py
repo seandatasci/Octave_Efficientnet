@@ -116,6 +116,22 @@ class OctConv2D(layers.Layer):
         high_input, low_input = inputs
 
         if self.use_depthwise:
+                        # High -> High conv
+            high_to_high = K.DepthwiseConv2D(high_input,
+                                             self.high_to_high_kernel,
+                                             strides=self.strides,
+                                             padding=self.padding,
+                                             data_format="channels_last")
+            # High -> Low conv
+            high_to_low = None
+            # Low -> High conv
+            low_to_high = None
+            # Low -> Low conv
+            low_to_low = K.DepthwiseConv2D(low_input, self.low_to_low_kernel,
+                                           strides=self.strides,
+                                           padding=self.padding,
+                                           data_format="channels_last")
+        else:
             # High -> High conv
             high_to_high = K.conv2d(high_input, self.high_to_high_kernel,
                                     strides=self.strides, padding=self.padding,
@@ -137,34 +153,6 @@ class OctConv2D(layers.Layer):
             low_to_low = K.conv2d(low_input, self.low_to_low_kernel,
                                   strides=self.strides, padding=self.padding,
                                   data_format="channels_last")
-        else:
-            # High -> High conv
-            high_to_high = K.DepthwiseConv2D(high_input,
-                                             self.high_to_high_kernel,
-                                             strides=self.strides,
-                                             padding=self.padding,
-                                             data_format="channels_last")
-            # High -> Low conv
-            high_to_low = K.pool2d(high_input, (2, 2), strides=(2, 2),
-                                   pool_mode="avg")
-            high_to_low = K.DepthwiseConv2D(high_to_low,
-                                            self.high_to_low_kernel,
-                                            strides=self.strides,
-                                            padding=self.padding,
-                                            data_format="channels_last")
-            # Low -> High conv
-            low_to_high = K.DepthwiseConv2D(low_input, self.low_to_high_kernel,
-                                            strides=self.strides,
-                                            padding=self.padding,
-                                            data_format="channels_last")
-            low_to_high = K.repeat_elements(low_to_high, 2,
-                                            axis=1)  # Nearest Neighbor Upsampling
-            low_to_high = K.repeat_elements(low_to_high, 2, axis=2)
-            # Low -> Low conv
-            low_to_low = K.DepthwiseConv2D(low_input, self.low_to_low_kernel,
-                                           strides=self.strides,
-                                           padding=self.padding,
-                                           data_format="channels_last")
         # Cross Add
         high_add = high_to_high + low_to_high
         low_add = high_to_low + low_to_low
