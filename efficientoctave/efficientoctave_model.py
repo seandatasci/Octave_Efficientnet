@@ -32,152 +32,170 @@ relu_fn = tf.nn.swish
 
 #octave convolution class including depthwise
 class OctConv2D(layers.Layer):
-    def __init__(self, filters, alpha, kernel_size=(3, 3), strides=(1, 1),
-                 padding="same", kernel_initializer='conv_kernel_initializer',
-                 kernel_regularizer=None, kernel_constraint=None,
-                 use_depthwise=False, **kwargs):
-        """
-        OctConv2D : Octave Convolution for image( rank 4 tensors)
-        filters: # output channels for low + high
-        alpha: Low channel ratio (alpha=0 -> High only, alpha=1 -> Low only)
-        kernel_size : 3x3 by default, padding : same by default
-        """
-        assert alpha >= 0 and alpha <= 1
-        assert filters > 0 and isinstance(filters, int)
-        super().__init__(**kwargs)
+  def __init__(self, filters, alpha, kernel_size=(3, 3), strides=(1, 1),
+                padding="same", kernel_initializer='conv_kernel_initializer',
+                kernel_regularizer=None, kernel_constraint=None,
+                use_depthwise=False, use_bias=False,**kwargs):
+    """
+    OctConv2D : Octave Convolution for image( rank 4 tensors)
+    filters: # output channels for low + high
+    alpha: Low channel ratio (alpha=0 -> High only, alpha=1 -> Low only)
+    kernel_size : 3x3 by default, padding : same by default
+    """
+    assert alpha >= 0 and alpha <= 1
+    assert filters > 0 and isinstance(filters, int)
+    super().__init__(**kwargs)
 
-        self.alpha = alpha
-        self.filters = filters
-        # optional values
-        self.kernel_size = kernel_size
-        self.strides = strides
-        self.padding = padding
-        self.kernel_initializer = kernel_initializer
-        self.kernel_regularizer = kernel_regularizer
-        self.kernel_constraint = kernel_constraint
-        self.use_depthwise = use_depthwise
-        # -> Low Channels
-        self.low_channels = int(self.filters * self.alpha)
-        # -> High Channles
-        self.high_channels = self.filters - self.low_channels
+    self.alpha = alpha
+    self.filters = filters
+    # optional values
+    self.kernel_size = kernel_size
+    self.strides = strides
+    if strides == (2,2) or strides == [2,2]:
+      self.strided=True
+    else:
+      self.strided=False
+    self.padding = padding
+    self.kernel_initializer = kernel_initializer
+    self.kernel_regularizer = kernel_regularizer
+    self.kernel_constraint = kernel_constraint
+    self.use_depthwise = use_depthwise
+    self.use_bias = use_bias
+    # -> Low Channels
+    self.low_channels = int(self.filters * self.alpha)
+    # -> High Channles
+    self.high_channels = self.filters - self.low_channels
 
-    def build(self, input_shape):
-        assert len(input_shape) == 2
-        assert len(input_shape[0]) == 4 and len(input_shape[1]) == 4
-        # Assertion for high inputs
-        assert input_shape[0][1] // 2 >= self.kernel_size[0]
-        assert input_shape[0][2] // 2 >= self.kernel_size[1]
-        # Assertion for low inputs
-        assert input_shape[0][1] // input_shape[1][1] == 2
-        assert input_shape[0][2] // input_shape[1][2] == 2
-        # channels last for TensorFlow
-        assert K.image_data_format() == "channels_last"
-        # input channels
-        high_in = int(input_shape[0][3])
-        low_in = int(input_shape[1][3])
+  def build(self, input_shape):
+    assert len(input_shape) == 2
+    assert len(input_shape[0]) == 4 and len(input_shape[1]) == 4
+    # Assertion for high inputs
+    assert input_shape[0][1] // 2 >= self.kernel_size[0]
+    assert input_shape[0][2] // 2 >= self.kernel_size[1]
+    # Assertion for low inputs
+    assert input_shape[0][1] // input_shape[1][1] == 2
+    assert input_shape[0][2] // input_shape[1][2] == 2
+    # channels last for TensorFlow
+    assert K.image_data_format() == "channels_last"
+    # input channels
+    high_in = int(input_shape[0][3])
+    low_in = int(input_shape[1][3])
 
-        # High -> High
-        self.high_to_high_kernel = self.add_weight(name="high_to_high_kernel",
-                                                   shape=(
-                                                   *self.kernel_size, high_in,
-                                                   self.high_channels),
-                                                   initializer=self.kernel_initializer,
-                                                   regularizer=self.kernel_regularizer,
-                                                   constraint=self.kernel_constraint)
-        # High -> Low
-        self.high_to_low_kernel = self.add_weight(name="high_to_low_kernel",
-                                                  shape=(
-                                                  *self.kernel_size, high_in,
-                                                  self.low_channels),
-                                                  initializer=self.kernel_initializer,
-                                                  regularizer=self.kernel_regularizer,
-                                                  constraint=self.kernel_constraint)
-        # Low -> High
-        self.low_to_high_kernel = self.add_weight(name="low_to_high_kernel",
-                                                  shape=(
-                                                  *self.kernel_size, low_in,
-                                                  self.high_channels),
-                                                  initializer=self.kernel_initializer,
-                                                  regularizer=self.kernel_regularizer,
-                                                  constraint=self.kernel_constraint)
-        # Low -> Low
-        self.low_to_low_kernel = self.add_weight(name="low_to_low_kernel",
-                                                 shape=(
-                                                 *self.kernel_size, low_in,
-                                                 self.low_channels),
-                                                 initializer=self.kernel_initializer,
-                                                 regularizer=self.kernel_regularizer,
-                                                 constraint=self.kernel_constraint)
-        super().build(input_shape)
+    self.avg_pooling = tf.keras.layers.GlobalAveragePooling2D(
+        data_format="channels_last")
 
-    def call(self, inputs):
-        # Input = [X^H, X^L]
-        assert len(inputs) == 2
-        high_input, low_input = inputs
+      # High -> High conv
+    if self.use_depthwise:
+      self.high_to_high = utils.DepthwiseConv2D(self.kernel_size,
+                                                strides=(1, 1),
+                                                depthwise_initializer=self.kernel_initializer,
+                                                padding=self.padding,
+                                                use_bias=self.use_bias)
+      # Low -> Low conv
+      self.low_to_low = utils.DepthwiseConv2D(self.kernel_size,
+                                              strides=(1, 1),
+                                              depthwise_initializer=self.kernel_initializer,
+                                              padding=self.padding,
+                                              use_bias=self.use_bias)
+      self.high_to_low = None
+      self.low_to_high = None
+    else:
+      self.high_to_high = tf.layers.Conv2D(self.high_channels,
+                                            kernel_size=self.kernel_size,
+                                            strides=(1, 1),
+                                            kernel_initializer=self.kernel_initializer,
+                                            padding=self.padding,
+                                            use_bias=self.use_bias)
+      # Low -> Low conv
+      self.low_to_low = tf.layers.Conv2D(self.low_channels,
+                                          kernel_size=self.kernel_size,
+                                          strides=(1, 1),
+                                          kernel_initializer=self.kernel_initializer,
+                                          padding=self.padding,
+                                          use_bias=False)                                   
+      # High -> Low conv
+      self.high_to_low = tf.layers.Conv2D(self.low_channels,
+                                          kernel_size=self.kernel_size,
+                                          strides=(1, 1),
+                                          kernel_initializer=self.kernel_initializer,
+                                          padding=self.padding,
+                                          use_bias=self.use_bias)
+      # Low -> High conv
+      self.low_to_high = tf.layers.Conv2D(self.high_channels,
+                                          kernel_size=self.kernel_size,
+                                          strides=(1, 1),
+                                          kernel_initializer=self.kernel_initializer,
+                                          padding=self.padding,
+                                          use_bias=False)
+    super().build(input_shape)
+  
+  def call(self, inputs):
+    # Input = [X^H, X^L]
+    assert len(inputs) == 2
+    high_input, low_input = inputs
 
-        if self.use_depthwise:
-                        # High -> High conv
-            high_to_high = K.DepthwiseConv2D(high_input,
-                                             self.high_to_high_kernel,
-                                             strides=self.strides,
-                                             padding=self.padding,
-                                             data_format="channels_last")
-            # High -> Low conv
-            high_to_low = None
-            # Low -> High conv
-            low_to_high = None
-            # Low -> Low conv
-            low_to_low = K.DepthwiseConv2D(low_input, self.low_to_low_kernel,
-                                           strides=self.strides,
-                                           padding=self.padding,
-                                           data_format="channels_last")
-        else:
-            # High -> High conv
-            high_to_high = K.conv2d(high_input, self.high_to_high_kernel,
-                                    strides=self.strides, padding=self.padding,
-                                    data_format="channels_last")
-            # High -> Low conv
-            high_to_low = K.pool2d(high_input, (2, 2), strides=(2, 2),
-                                   pool_mode="avg")
-            high_to_low = K.conv2d(high_to_low, self.high_to_low_kernel,
-                                   strides=self.strides, padding=self.padding,
-                                   data_format="channels_last")
-            # Low -> High conv
-            low_to_high = K.conv2d(low_input, self.low_to_high_kernel,
-                                   strides=self.strides, padding=self.padding,
-                                   data_format="channels_last")
-            low_to_high = K.repeat_elements(low_to_high, 2,
-                                            axis=1)  # Nearest Neighbor Upsampling
-            low_to_high = K.repeat_elements(low_to_high, 2, axis=2)
-            # Low -> Low conv
-            low_to_low = K.conv2d(low_input, self.low_to_low_kernel,
-                                  strides=self.strides, padding=self.padding,
-                                  data_format="channels_last")
-        # Cross Add
-        high_add = high_to_high + low_to_high
-        low_add = high_to_low + low_to_low
-        return [high_add, low_add]
+    if self.use_depthwise:         
+      if self.strided:
+        h2h_input = layers.AveragePooling2D(2)(high_input)
+        l2l_input = layers.AveragePooling2D(2)(low_input)
+      else:
+        h2h_input = high_input
+        l2l_input = low_input
+      # High -> High conv
+      high = self.high_to_high(h2h_input)
+      # Low -> Low conv
+      low = self.low_to_low(l2l_input)
+      # Low -> High conv
+      high_from_low = None
+      # High -> Low conv
+      low_from_high = None
+    else:
+      if self.strided:
+        h2h_input = layers.AveragePooling2D(2)(high_input)
+        l2l_input = layers.AveragePooling2D(2)(low_input)
+      else:
+        h2h_input = high_input
+        l2l_input = low_input
+      # High -> High conv
+      high = self.high_to_high(h2h_input)
+      # Low -> Low conv
+      low = self.low_to_low(l2l_input)
+      # Low -> High conv
+      high_from_low = self.low_to_high(low_input)
+      if not self.strided:
+        high_from_low = layers.UpSampling2D(size=(2, 2))(high_from_low)
+      # High -> Low conv
+      low_from_high = layers.AveragePooling2D(2)(h2h_input)
+      low_from_high = self.high_to_low(low_from_high)
+    # Cross Add
+    if self.use_depthwise:
+      high_add = high
+      low_add = low
+    else:
+      high_add = high + high_from_low
+      low_add = low + low_from_high
+    return [high_add, low_add]
 
-    def compute_output_shape(self, input_shapes):
-        high_in_shape, low_in_shape = input_shapes
-        high_out_shape = (*high_in_shape[:3], self.high_channels)
-        low_out_shape = (*low_in_shape[:3], self.low_channels)
-        return [high_out_shape, low_out_shape]
+  def compute_output_shape(self, input_shapes):
+    high_in_shape, low_in_shape = input_shapes
+    high_out_shape = (*high_in_shape[:3], self.high_channels)
+    low_out_shape = (*low_in_shape[:3], self.low_channels)
+    return [high_out_shape, low_out_shape]
 
-    def get_config(self):
-        base_config = super().get_config()
-        out_config = {
-            **base_config,
-            "alpha": self.alpha,
-            "filters": self.filters,
-            "kernel_size": self.kernel_size,
-            "strides": self.strides,
-            "padding": self.padding,
-            "kernel_initializer": self.kernel_initializer,
-            "kernel_regularizer": self.kernel_regularizer,
-            "kernel_constraint": self.kernel_constraint,
-        }
-        return out_config
+  def get_config(self):
+    base_config = super().get_config()
+    out_config = {
+        **base_config,
+        "alpha": self.alpha,
+        "filters": self.filters,
+        "kernel_size": self.kernel_size,
+        "strides": self.strides,
+        "padding": self.padding,
+        "kernel_initializer": self.kernel_initializer,
+        "kernel_regularizer": self.kernel_regularizer,
+        "kernel_constraint": self.kernel_constraint,
+    }
+    return out_config
 
     
 
@@ -311,23 +329,35 @@ class MBConvBlock(object):
           alpha=0.125,
           kernel_size=[1, 1],
           strides=[1, 1],
-          kernel_initializer=str(conv_kernel_initializer),
-          padding='same')
-      self._bn0 = batchnorm(
+          kernel_initializer=conv_kernel_initializer,
+          padding='same',
+          use_bias=False)
+      self._bn0_h = batchnorm(
           axis=self._channel_axis,
           momentum=self._batch_norm_momentum,
           epsilon=self._batch_norm_epsilon)
-
+      self._bn0_l = batchnorm(
+          axis=self._channel_axis,
+          momentum=self._batch_norm_momentum,
+          epsilon=self._batch_norm_epsilon)
+      
     kernel_size = self._block_args.kernel_size
     
     # Depth-wise convolution phase:
-    self._depthwise_conv = OctConv2D( #TODO Update filter size and add alpha
-        [kernel_size, kernel_size],
+    self._depthwise_conv = OctConv2D(
+        filters,
+        alpha=0.125,
+        kernel_size=[kernel_size, kernel_size],
         strides=self._block_args.strides,
-        depthwise_initializer=conv_kernel_initializer,
+        kernel_initializer=conv_kernel_initializer,
         padding='same',
-        use_bias=False,use_depthwise=True)
-    self._bn1 = batchnorm(
+        use_bias=False,
+        use_depthwise=True)
+    self._bn1_h = batchnorm(
+        axis=self._channel_axis,
+        momentum=self._batch_norm_momentum,
+        epsilon=self._batch_norm_epsilon)
+    self._bn1_l = batchnorm(
         axis=self._channel_axis,
         momentum=self._batch_norm_momentum,
         epsilon=self._batch_norm_epsilon)
@@ -336,20 +366,40 @@ class MBConvBlock(object):
       num_reduced_filters = max(
           1, int(self._block_args.input_filters * self._block_args.se_ratio))
       # Squeeze and Excitation layer.
-      self._se_reduce = OctConv2D(
+      self._se_reduce_h = tf.layers.Conv2D(
           num_reduced_filters,
-          alpha=0.125,
           kernel_size=[1, 1],
           strides=[1, 1],
-          kernel_initializer=str(conv_kernel_initializer),
-          padding='same')
-      self._se_expand = OctConv2D(
-          filters,
-          alpha=0.125,
+          kernel_initializer=conv_kernel_initializer,
+          padding='same',
+          use_bias=True)
+      self._se_reduce_l = tf.layers.Conv2D(
+          num_reduced_filters,
           kernel_size=[1, 1],
           strides=[1, 1],
-          kernel_initializer=str(conv_kernel_initializer),
-          padding='same')
+          kernel_initializer=conv_kernel_initializer,
+          padding='same',
+          use_bias=True)
+      if self._block_args.expand_ratio != 1:
+        high_filters = filters-int(filters*0.125)
+        low_filters = int(filters*0.125)
+      else:
+        high_filters = filters
+        low_filters = filters
+      self._se_expand_h = tf.layers.Conv2D(
+          high_filters,
+          kernel_size=[1, 1],
+          strides=[1, 1],
+          kernel_initializer=conv_kernel_initializer,
+          padding='same',
+          use_bias=True)
+      self._se_expand_l = tf.layers.Conv2D(
+          low_filters,
+          kernel_size=[1, 1],
+          strides=[1, 1],
+          kernel_initializer=conv_kernel_initializer,
+          padding='same',
+          use_bias=True)
 
     # Output phase:
     filters = self._block_args.output_filters
@@ -358,9 +408,13 @@ class MBConvBlock(object):
         alpha=0.125,
         kernel_size=[1, 1],
         strides=[1, 1],
-        kernel_initializer=str(conv_kernel_initializer),
+        kernel_initializer=conv_kernel_initializer,
         padding='same')
-    self._bn2 = batchnorm(
+    self._bn2_h = batchnorm(
+        axis=self._channel_axis,
+        momentum=self._batch_norm_momentum,
+        epsilon=self._batch_norm_epsilon)
+    self._bn2_l = batchnorm(
         axis=self._channel_axis,
         momentum=self._batch_norm_momentum,
         epsilon=self._batch_norm_epsilon)
@@ -373,13 +427,12 @@ class MBConvBlock(object):
       A output tensor, which should have the same shape as input.
     """
     input_high,input_low = input_tensors
+    # se_low = layers.UpSampling2D(size=(2, 2))(input_low)
     se_high = tf.reduce_mean(input_high, self._spatial_dims, keepdims=True)
     se_low = tf.reduce_mean(input_low, self._spatial_dims, keepdims=True)
     # if self._block_args.expand_ratio != 1:
-    se_high, se_low = self._se_reduce([se_high,se_low])
-    se_high = relu_fn(se_high, training=training)
-    se_low = relu_fn(se_low, training=training)
-    se_high, se_low = self._se_expand([se_high,se_low])
+    se_high = self._se_expand_h(relu_fn(self._se_reduce_h(se_high)))
+    se_low = self._se_expand_l(relu_fn(self._se_reduce_l(se_low)))
     se_high = tf.sigmoid(se_high) * input_high
     se_low = tf.sigmoid(se_low) * input_low
     tf.logging.info('Built Squeeze and Excitation with tensor shape: %s' %
@@ -401,26 +454,30 @@ class MBConvBlock(object):
     tf.logging.info('Block input: %s shape: %s' % (high.name, high.shape))
     if self._block_args.expand_ratio != 1:
       high, low = self._expand_conv([inputs,low])
-      high = relu_fn(self._bn0(high, training=training))
-      low = relu_fn(self._bn0(low, training=training))
+      high = relu_fn(self._bn0_h(high, training=training))
+      low = relu_fn(self._bn0_l(low, training=training))
     else:
       pass
 
     tf.logging.info('Expand: %s shape: %s' % (high.name, high.shape))
 
-    high, low = self._depthwise_conv([high,low]), training=training)
-    high = relu_fn(self._bn1(high))
-    low = relu_fn(self._bn1(low))
+    high, low = self._depthwise_conv([high,low])
+    high = relu_fn(self._bn1_h(high, training=training))
+    low = relu_fn(self._bn1_l(low, training=training))
     tf.logging.info('DWConv: %s shape: %s' % (high.name, high.shape))
 
     if self.has_se:
       with tf.variable_scope('se'):
         high,low = self._call_se([high,low])
+        low = layers.UpSampling2D(size=(2, 2))(low)
+        concat = layers.Concatenate()([high, low])
+        high = inputs
+        low = layers.AveragePooling2D(2)(inputs)        
 
     self.endpoints = {'expansion_output': high}
     high, low = self._project_conv([high,low])
-    high = self._bn2(high, training=training)
-    low = self._bn2(low, training=training)
+    high = self._bn2_h(high, training=training)
+    low = self._bn2_l(low, training=training)
     
     low = layers.UpSampling2D(size=(2, 2))(low)
     x = layers.Concatenate()([high, low])
@@ -494,9 +551,14 @@ class Model(tf.keras.Model):
         alpha=0.125,
         kernel_size=[3, 3],
         strides=[2, 2],
-        kernel_initializer=str(conv_kernel_initializer),
-        padding='same')
-    self._bn0 = batchnorm(
+        kernel_initializer=conv_kernel_initializer,
+        padding='same',
+        use_bias=False)
+    self._bn0_h = batchnorm(
+        axis=channel_axis,
+        momentum=batch_norm_momentum,
+        epsilon=batch_norm_epsilon)
+    self._bn0_l = batchnorm(
         axis=channel_axis,
         momentum=batch_norm_momentum,
         epsilon=batch_norm_epsilon)
@@ -507,13 +569,18 @@ class Model(tf.keras.Model):
         alpha=0.125,
         kernel_size=[1, 1],
         strides=[1, 1],
-        kernel_initializer=str(conv_kernel_initializer),
-        padding='same')
-    self._bn1 = batchnorm(
+        kernel_initializer=conv_kernel_initializer,
+        padding='same',
+        use_bias=False)
+    self._bn1_h = batchnorm(
         axis=channel_axis,
         momentum=batch_norm_momentum,
         epsilon=batch_norm_epsilon)
-
+    self._bn1_l = batchnorm(
+        axis=channel_axis,
+        momentum=batch_norm_momentum,
+        epsilon=batch_norm_epsilon)
+    
     self._avg_pooling = tf.keras.layers.GlobalAveragePooling2D(
         data_format=self._global_params.data_format)
     self._fc = tf.layers.Dense(
@@ -540,8 +607,8 @@ class Model(tf.keras.Model):
     with tf.variable_scope('stem'):
         low = layers.AveragePooling2D(2)(inputs)
         high, low = self._conv_stem([inputs, low])
-        high = relu_fn(self._bn0(high, training=training))
-        low = relu_fn(self._bn0(low, training=training))
+        high = relu_fn(self._bn0_h(high, training=training))
+        low = relu_fn(self._bn0_l(low, training=training))
         low = layers.UpSampling2D(size=(2, 2))(low)
         outputs = layers.Concatenate()([high, low])
     tf.logging.info('Built stem layers with output shape: %s' % outputs.shape)
@@ -578,8 +645,8 @@ class Model(tf.keras.Model):
       with tf.variable_scope('head'):
         low = layers.AveragePooling2D(2)(outputs)
         high, low = self._conv_head([outputs, low])
-        high = relu_fn(self._bn1(high, training=training))
-        low = relu_fn(self._bn1(low, training=training))
+        high = relu_fn(self._bn1_h(high, training=training))
+        low = relu_fn(self._bn1_l(low, training=training))
         low = layers.UpSampling2D(size=(2, 2))(low)
         outputs = layers.Concatenate()([high, low])
         outputs = self._avg_pooling(outputs)
