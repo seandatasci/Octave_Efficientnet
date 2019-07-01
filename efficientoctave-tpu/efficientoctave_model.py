@@ -83,6 +83,8 @@ class OctConv2D(layers.Layer):
 
     self.avg_pooling = tf.keras.layers.GlobalAveragePooling2D(
         data_format="channels_last")
+    
+    self.UpSampling2D = tf.keras.layers.UpSampling2D()
 
       # High -> High conv
     if self.use_depthwise:
@@ -163,7 +165,7 @@ class OctConv2D(layers.Layer):
       # Low -> High conv
       high_from_low = self.low_to_high(low_input)
       if not self.strided:
-        high_from_low = layers.UpSampling2D(size=(2, 2))(high_from_low)
+        high_from_low = self.UpSampling2D(size=(2, 2))(high_from_low)
       # High -> Low conv
       low_from_high = layers.AveragePooling2D(2)(h2h_input)
       low_from_high = self.high_to_low(low_from_high)
@@ -427,7 +429,7 @@ class MBConvBlock(object):
       A output tensor, which should have the same shape as input.
     """
     input_high,input_low = input_tensors
-    # se_low = layers.UpSampling2D(size=(2, 2))(input_low)
+    # se_low = self.UpSampling2D(size=(2, 2))(input_low)
     se_high = tf.reduce_mean(input_high, self._spatial_dims, keepdims=True)
     se_low = tf.reduce_mean(input_low, self._spatial_dims, keepdims=True)
     # if self._block_args.expand_ratio != 1:
@@ -469,7 +471,7 @@ class MBConvBlock(object):
     if self.has_se:
       with tf.variable_scope('se'):
         high,low = self._call_se([high,low])
-        low = layers.UpSampling2D(size=(2, 2))(low)
+        low = self.UpSampling2D(size=(2, 2))(low)
         concat = layers.Concatenate()([high, low])
         high = inputs
         low = layers.AveragePooling2D(2)(inputs)        
@@ -479,7 +481,7 @@ class MBConvBlock(object):
     high = self._bn2_h(high, training=training)
     low = self._bn2_l(low, training=training)
     
-    low = layers.UpSampling2D(size=(2, 2))(low)
+    low = self.UpSampling2D(size=(2, 2))(low)
     x = layers.Concatenate()([high, low])
     if self._block_args.id_skip:
       if all(
@@ -609,7 +611,7 @@ class Model(tf.keras.Model):
         high, low = self._conv_stem([inputs, low])
         high = relu_fn(self._bn0_h(high, training=training))
         low = relu_fn(self._bn0_l(low, training=training))
-        low = layers.UpSampling2D(size=(2, 2))(low)
+        low = self.UpSampling2D(size=(2, 2))(low)
         outputs = layers.Concatenate()([high, low])
     tf.logging.info('Built stem layers with output shape: %s' % outputs.shape)
     self.endpoints['stem'] = outputs
@@ -647,7 +649,7 @@ class Model(tf.keras.Model):
         high, low = self._conv_head([outputs, low])
         high = relu_fn(self._bn1_h(high, training=training))
         low = relu_fn(self._bn1_l(low, training=training))
-        low = layers.UpSampling2D(size=(2, 2))(low)
+        low = self.UpSampling2D(size=(2, 2))(low)
         outputs = layers.Concatenate()([high, low])
         outputs = self._avg_pooling(outputs)
         if self._dropout:
