@@ -585,6 +585,7 @@ class Model(tf.keras.Model):
     
     self._avg_pooling = tf.keras.layers.GlobalAveragePooling2D(
         data_format=self._global_params.data_format)
+    self.UpSampling2D = tf.keras.layers.UpSampling2D()
     self._fc = tf.layers.Dense(
         self._global_params.num_classes,
         kernel_initializer=dense_kernel_initializer)
