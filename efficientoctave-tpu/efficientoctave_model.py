@@ -84,7 +84,7 @@ class OctConv2D(layers.Layer):
     self.avg_pooling = tf.keras.layers.GlobalAveragePooling2D(
         data_format="channels_last")
     
-    self.UpSampling2D = tf.keras.layers.UpSampling2D()
+    self.UpSampling2D = tf.keras.layers.UpSampling2D(data_format="channels_last")
 
       # High -> High conv
     if self.use_depthwise:
@@ -585,7 +585,8 @@ class Model(tf.keras.Model):
     
     self._avg_pooling = tf.keras.layers.GlobalAveragePooling2D(
         data_format=self._global_params.data_format)
-    self.UpSampling2D = tf.keras.layers.UpSampling2D()
+    self._Up_Sampling2D = tf.keras.layers.UpSampling2D(
+        data_format=self._global_params.data_format)
     self._fc = tf.layers.Dense(
         self._global_params.num_classes,
         kernel_initializer=dense_kernel_initializer)
@@ -612,7 +613,7 @@ class Model(tf.keras.Model):
         high, low = self._conv_stem([inputs, low])
         high = relu_fn(self._bn0_h(high, training=training))
         low = relu_fn(self._bn0_l(low, training=training))
-        low = self.UpSampling2D(size=(2, 2))(low)
+        low = self._Up_Sampling2D(size=(2, 2))(low)
         outputs = layers.Concatenate()([high, low])
     tf.logging.info('Built stem layers with output shape: %s' % outputs.shape)
     self.endpoints['stem'] = outputs
@@ -650,7 +651,7 @@ class Model(tf.keras.Model):
         high, low = self._conv_head([outputs, low])
         high = relu_fn(self._bn1_h(high, training=training))
         low = relu_fn(self._bn1_l(low, training=training))
-        low = self.UpSampling2D(size=(2, 2))(low)
+        low = self._Up_Sampling2D(size=(2, 2))(low)
         outputs = layers.Concatenate()([high, low])
         outputs = self._avg_pooling(outputs)
         if self._dropout:
