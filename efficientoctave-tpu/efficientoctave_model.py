@@ -81,10 +81,10 @@ class OctConv2D(layers.Layer):
     high_in = int(input_shape[0][3])
     low_in = int(input_shape[1][3])
 
-    self.avg_pooling = keras.layers.GlobalAveragePooling2D(
+    self.avg_pooling = layers.GlobalAveragePooling2D(
         data_format="channels_last")
     
-    self.UpSampling2D = keras.layers.UpSampling2D(data_format="channels_last")
+    self.UpSampling2D = layers.UpSampling2D(data_format="channels_last")
 
       # High -> High conv
     if self.use_depthwise:
