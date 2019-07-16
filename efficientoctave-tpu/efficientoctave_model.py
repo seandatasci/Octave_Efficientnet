@@ -415,6 +415,12 @@ class MBConvBlock(object):
         axis=self._channel_axis,
         momentum=self._batch_norm_momentum,
         epsilon=self._batch_norm_epsilon)
+    self.up_sample_project_conv = layers.Conv2DTranspose(filters = self._project_conv.low_channels,
+                                        kernel_size = 1, strides = 2, padding='same',
+                                            data_format="channels_last")
+    self.up_sample_has_se = layers.Conv2DTranspose(filters = self.has_se.low_channels,
+                                        kernel_size = 1, strides = 2, padding='same',
+                                            data_format="channels_last")
 
   def _call_se(self, input_tensors):
     """Call Squeeze and Excitation layer.
@@ -464,7 +470,7 @@ class MBConvBlock(object):
     if self.has_se:
       with tf.variable_scope('se'):
         high,low = self._call_se([high,low])
-        low = layers.UpSampling2D(size=(2, 2))(low)
+        low = self.up_sample_has_se(low)
         concat = layers.Concatenate()([high, low])
         high = inputs
         low = layers.AveragePooling2D(2)(inputs)        
@@ -474,7 +480,7 @@ class MBConvBlock(object):
     high = self._bn2_h(high, training=training)
     low = self._bn2_l(low, training=training)
     
-    low = layers.UpSampling2D(size=(2, 2))(low)
+    low = self.up_sample_project_conv(low)
     x = layers.Concatenate()([high, low])
     if self._block_args.id_skip:
       if all(
@@ -583,10 +589,10 @@ class Model(tf.keras.Model):
         kernel_initializer=dense_kernel_initializer)
     self.up_sample_stem = layers.Conv2DTranspose(filters = self._conv_stem.low_channels,
                                             kernel_size = 1, strides = 2, padding='same',
-                                                data_format="channels_last")(low)
+                                                data_format="channels_last")
     self.up_sample_head = layers.Conv2DTranspose(filters = self._conv_head.low_channels,
                                             kernel_size = 1, strides = 2, padding='same',
-                                                data_format="channels_last")(low)
+                                                data_format="channels_last")
     if self._global_params.dropout_rate > 0:
       self._dropout = tf.keras.layers.Dropout(self._global_params.dropout_rate)
     else:
@@ -609,7 +615,7 @@ class Model(tf.keras.Model):
         high, low = self._conv_stem([inputs, low])
         high = relu_fn(self._bn0_h(high, training=training))
         low = relu_fn(self._bn0_l(low, training=training))
-        low = self.up_sample_stem
+        low = self.up_sample_stem(low)
         
         # low = layers.Conv2DTranspose(filters = ,kernel_size = 1, strides = 2, padding='same')
         outputs = layers.Concatenate()([high, low])
@@ -649,7 +655,7 @@ class Model(tf.keras.Model):
         high, low = self._conv_head([outputs, low])
         high = relu_fn(self._bn1_h(high, training=training))
         low = relu_fn(self._bn1_l(low, training=training))
-        low = self.up_sample_head
+        low = self.up_sample_head(low)
         outputs = layers.Concatenate()([high, low])
         outputs = self._avg_pooling(outputs)
         if self._dropout:
