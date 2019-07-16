@@ -124,6 +124,9 @@ class OctConv2D(layers.Layer):
                                           kernel_initializer=self.kernel_initializer,
                                           padding=self.padding,
                                           use_bias=False)
+      self.up_sample_high_from_low = layers.Conv2DTranspose(filters = self.low_channels,
+                                        kernel_size = 1, strides = 2, padding='same',
+                                            data_format="channels_last")
     super().build(input_shape)
   
   def call(self, inputs):
@@ -160,7 +163,7 @@ class OctConv2D(layers.Layer):
       # Low -> High conv
       high_from_low = self.low_to_high(low_input)
       if not self.strided:
-        high_from_low = layers.UpSampling2D(size=(2, 2))(high_from_low)
+        high_from_low = self.up_sample_high_from_low(high_from_low)
       # High -> Low conv
       low_from_high = layers.AveragePooling2D(2)(h2h_input)
       low_from_high = self.high_to_low(low_from_high)
