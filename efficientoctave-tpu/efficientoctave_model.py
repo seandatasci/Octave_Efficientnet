@@ -418,7 +418,7 @@ class MBConvBlock(object):
     self.up_sample_project_conv = layers.Conv2DTranspose(filters = self._project_conv.low_channels,
                                         kernel_size = 1, strides = 2, padding='same',
                                             data_format="channels_last")
-    self.up_sample_has_se = layers.Conv2DTranspose(filters = self.has_se.low_channels,
+    self.up_sample_has_se = layers.Conv2DTranspose(filters = low_filters,
                                         kernel_size = 1, strides = 2, padding='same',
                                             data_format="channels_last")
 
