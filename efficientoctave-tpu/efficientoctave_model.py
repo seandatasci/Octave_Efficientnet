@@ -604,7 +604,7 @@ class Model(tf.keras.Model):
         high, low = self._conv_stem([inputs, low])
         high = relu_fn(self._bn0_h(high, training=training))
         low = relu_fn(self._bn0_l(low, training=training))
-        low = self._Up_Sampling2D(size=(2, 2))(low)
+        low = layers.UpSampling2D(size=(2, 2))(low)
         outputs = layers.Concatenate()([high, low])
     tf.logging.info('Built stem layers with output shape: %s' % outputs.shape)
     self.endpoints['stem'] = outputs
@@ -642,7 +642,7 @@ class Model(tf.keras.Model):
         high, low = self._conv_head([outputs, low])
         high = relu_fn(self._bn1_h(high, training=training))
         low = relu_fn(self._bn1_l(low, training=training))
-        low = self._Up_Sampling2D(low)
+        low = layer.UpSampling2D(size=(2, 2))(low)
         outputs = layers.Concatenate()([high, low])
         outputs = self._avg_pooling(outputs)
         if self._dropout:
