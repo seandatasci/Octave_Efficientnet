@@ -581,10 +581,12 @@ class Model(tf.keras.Model):
     self._fc = tf.layers.Dense(
         self._global_params.num_classes,
         kernel_initializer=dense_kernel_initializer)
-    self.up_sample_stem = layers.Conv2DTranspose(self._conv_stem.low_channels,
-                                            kernel_size = 1, strides = 2, padding='same')
-    self.up_sample_head = layers.Conv2DTranspose(self._conv_head.low_channels,
-                                            kernel_size = 1, strides = 2, padding='same')
+    self.up_sample_stem = layers.Conv2DTranspose(filters = self._conv_stem.low_channels,
+                                            kernel_size = 1, strides = 2, padding='same',
+                                                data_format="channels_last")(low)
+    self.up_sample_head = layers.Conv2DTranspose(filters = self._conv_head.low_channels,
+                                            kernel_size = 1, strides = 2, padding='same',
+                                                data_format="channels_last")(low)
     if self._global_params.dropout_rate > 0:
       self._dropout = tf.keras.layers.Dropout(self._global_params.dropout_rate)
     else:
