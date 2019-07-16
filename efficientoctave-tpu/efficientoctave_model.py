@@ -81,7 +81,7 @@ class OctConv2D(layers.Layer):
     high_in = int(input_shape[0][3])
     low_in = int(input_shape[1][3])
 
-      # High -> High conv
+    # High -> High conv
     if self.use_depthwise:
       self.high_to_high = utils.DepthwiseConv2D(self.kernel_size,
                                                 strides=(1, 1),
@@ -160,7 +160,7 @@ class OctConv2D(layers.Layer):
       # Low -> High conv
       high_from_low = self.low_to_high(low_input)
       if not self.strided:
-        high_from_low = self.UpSampling2D(size=(2, 2))(high_from_low)
+        high_from_low = layers.UpSampling2D(size=(2, 2))(high_from_low)
       # High -> Low conv
       low_from_high = layers.AveragePooling2D(2)(h2h_input)
       low_from_high = self.high_to_low(low_from_high)
@@ -424,10 +424,8 @@ class MBConvBlock(object):
       A output tensor, which should have the same shape as input.
     """
     input_high,input_low = input_tensors
-    # se_low = self.UpSampling2D(size=(2, 2))(input_low)
     se_high = tf.reduce_mean(input_high, self._spatial_dims, keepdims=True)
     se_low = tf.reduce_mean(input_low, self._spatial_dims, keepdims=True)
-    # if self._block_args.expand_ratio != 1:
     se_high = self._se_expand_h(relu_fn(self._se_reduce_h(se_high)))
     se_low = self._se_expand_l(relu_fn(self._se_reduce_l(se_low)))
     se_high = tf.sigmoid(se_high) * input_high
@@ -466,7 +464,7 @@ class MBConvBlock(object):
     if self.has_se:
       with tf.variable_scope('se'):
         high,low = self._call_se([high,low])
-        low = self.UpSampling2D(size=(2, 2))(low)
+        low = layers.UpSampling2D(size=(2, 2))(low)
         concat = layers.Concatenate()([high, low])
         high = inputs
         low = layers.AveragePooling2D(2)(inputs)        
