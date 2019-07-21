@@ -427,7 +427,7 @@ class MBConvBlock(object):
                                                         kernel_initializer=conv_kernel_initializer,
                                                         padding='same',
                                                         use_bias=False)
-    self.upsample_se_block = layers.Conv2DTranspose(self._se_expand_l.low_filters,
+    self.upsample_se_block = layers.Conv2DTranspose(low_filters,
                                                         kernel_size=1,
                                                         strides=(2, 2),
                                                         kernel_initializer=conv_kernel_initializer,
