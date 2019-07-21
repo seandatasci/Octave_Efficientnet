@@ -80,7 +80,13 @@ class OctConv2D(layers.Layer):
     # input channels
     high_in = int(input_shape[0][3])
     low_in = int(input_shape[1][3])
-
+    
+    self.upsample = layers.Conv2DTranspose(self.high_channels,
+                                              kernel_size=1,
+                                              strides=(2, 2),
+                                              kernel_initializer=self.kernel_initializer,
+                                              padding='same',
+                                              use_bias=False)
     # High -> High conv
     if self.use_depthwise:
       self.high_to_high = utils.DepthwiseConv2D(self.kernel_size,
@@ -124,9 +130,6 @@ class OctConv2D(layers.Layer):
                                           kernel_initializer=self.kernel_initializer,
                                           padding=self.padding,
                                           use_bias=False)
-      self.up_sample_high_from_low = layers.Conv2DTranspose(filters = self.low_channels,
-                                        kernel_size = 1, strides = 2, padding='same',
-                                            data_format="channels_last")
     super().build(input_shape)
   
   def call(self, inputs):
@@ -163,7 +166,7 @@ class OctConv2D(layers.Layer):
       # Low -> High conv
       high_from_low = self.low_to_high(low_input)
       if not self.strided:
-        high_from_low = self.up_sample_high_from_low(high_from_low)
+        high_from_low = self.upsample(high_from_low)
       # High -> Low conv
       low_from_high = layers.AveragePooling2D(2)(h2h_input)
       low_from_high = self.high_to_low(low_from_high)
@@ -418,12 +421,18 @@ class MBConvBlock(object):
         axis=self._channel_axis,
         momentum=self._batch_norm_momentum,
         epsilon=self._batch_norm_epsilon)
-    self.up_sample_project_conv = layers.Conv2DTranspose(filters = self._project_conv.low_channels,
-                                        kernel_size = 1, strides = 2, padding='same',
-                                            data_format="channels_last")
-    self.up_sample_has_se = layers.Conv2DTranspose(filters = low_filters,
-                                        kernel_size = 1, strides = 2, padding='same',
-                                            data_format="channels_last")
+    self.upsample_project_conv = layers.Conv2DTranspose(self._project_conv.low_channels,
+                                                        kernel_size=1,
+                                                        strides=(2, 2),
+                                                        kernel_initializer=self.kernel_initializer,
+                                                        padding='same',
+                                                        use_bias=False)
+    self.upsample_se_block = layers.Conv2DTranspose(self._se_expand_l.low_channels,
+                                                        kernel_size=1,
+                                                        strides=(2, 2),
+                                                        kernel_initializer=self.kernel_initializer,
+                                                        padding='same',
+                                                        use_bias=False)
 
   def _call_se(self, input_tensors):
     """Call Squeeze and Excitation layer.
@@ -457,7 +466,7 @@ class MBConvBlock(object):
 
     tf.logging.info('Block input: %s shape: %s' % (high.name, high.shape))
     if self._block_args.expand_ratio != 1:
-      high, low = self._expand_conv([inputs,low])
+      high, low = self._expand_conv([inputs, low])
       high = relu_fn(self._bn0_h(high, training=training))
       low = relu_fn(self._bn0_l(low, training=training))
     else:
@@ -465,15 +474,15 @@ class MBConvBlock(object):
 
     tf.logging.info('Expand: %s shape: %s' % (high.name, high.shape))
 
-    high, low = self._depthwise_conv([high,low])
+    high, low = self._depthwise_conv([high, low])
     high = relu_fn(self._bn1_h(high, training=training))
     low = relu_fn(self._bn1_l(low, training=training))
     tf.logging.info('DWConv: %s shape: %s' % (high.name, high.shape))
 
     if self.has_se:
       with tf.variable_scope('se'):
-        high,low = self._call_se([high,low])
-        low = self.up_sample_has_se(low)
+        high, low = self._call_se([high, low])
+        low = self.upsample_se_block(low)
         concat = layers.Concatenate()([high, low])
         high = inputs
         low = layers.AveragePooling2D(2)(inputs)        
@@ -483,7 +492,7 @@ class MBConvBlock(object):
     high = self._bn2_h(high, training=training)
     low = self._bn2_l(low, training=training)
     
-    low = self.up_sample_project_conv(low)
+    low = self.upsample_project_conv(low)
     x = layers.Concatenate()([high, low])
     if self._block_args.id_skip:
       if all(
@@ -590,10 +599,10 @@ class Model(tf.keras.Model):
     self._fc = tf.layers.Dense(
         self._global_params.num_classes,
         kernel_initializer=dense_kernel_initializer)
-    self.up_sample_stem = layers.Conv2DTranspose(filters = self._conv_stem.low_channels,
+    self.upsample_stem = layers.Conv2DTranspose(filters = self._conv_stem.low_channels,
                                             kernel_size = 1, strides = 2, padding='same',
                                                 data_format="channels_last")
-    self.up_sample_head = layers.Conv2DTranspose(filters = self._conv_head.low_channels,
+    self.upsample_head = layers.Conv2DTranspose(filters = self._conv_head.low_channels,
                                             kernel_size = 1, strides = 2, padding='same',
                                                 data_format="channels_last")
     if self._global_params.dropout_rate > 0:
