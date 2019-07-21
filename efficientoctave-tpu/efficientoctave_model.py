@@ -424,13 +424,13 @@ class MBConvBlock(object):
     self.upsample_project_conv = layers.Conv2DTranspose(self._project_conv.low_channels,
                                                         kernel_size=1,
                                                         strides=(2, 2),
-                                                        kernel_initializer=self.kernel_initializer,
+                                                        kernel_initializer=conv_kernel_initializer,
                                                         padding='same',
                                                         use_bias=False)
     self.upsample_se_block = layers.Conv2DTranspose(self._se_expand_l.low_channels,
                                                         kernel_size=1,
                                                         strides=(2, 2),
-                                                        kernel_initializer=self.kernel_initializer,
+                                                        kernel_initializer=conv_kernel_initializer,
                                                         padding='same',
                                                         use_bias=False)
 
@@ -602,13 +602,13 @@ class Model(tf.keras.Model):
     self.upsample_stem = layers.Conv2DTranspose(self._conv_stem.low_channels,
                                                 kernel_size=1,
                                                 strides=(2, 2),
-                                                kernel_initializer=self.kernel_initializer,
+                                                kernel_initializer=conv_kernel_initializer,
                                                 padding='same',
                                                 use_bias=False)
     self.upsample_head = layers.Conv2DTranspose(self._conv_head.low_channels,
                                                 kernel_size=1,
                                                 strides=(2, 2),
-                                                kernel_initializer=self.kernel_initializer,
+                                                kernel_initializer=conv_kernel_initializer,
                                                 padding='same',
                                                 use_bias=False)
     if self._global_params.dropout_rate > 0:
