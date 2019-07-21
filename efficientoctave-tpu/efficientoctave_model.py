@@ -599,12 +599,18 @@ class Model(tf.keras.Model):
     self._fc = tf.layers.Dense(
         self._global_params.num_classes,
         kernel_initializer=dense_kernel_initializer)
-    self.upsample_stem = layers.Conv2DTranspose(filters = self._conv_stem.low_channels,
-                                            kernel_size = 1, strides = 2, padding='same',
-                                                data_format="channels_last")
-    self.upsample_head = layers.Conv2DTranspose(filters = self._conv_head.low_channels,
-                                            kernel_size = 1, strides = 2, padding='same',
-                                                data_format="channels_last")
+    self.upsample_stem = layers.Conv2DTranspose(self._conv_stem.low_channels,
+                                                kernel_size=1,
+                                                strides=(2, 2),
+                                                kernel_initializer=self.kernel_initializer,
+                                                padding='same',
+                                                use_bias=False)
+    self.upsample_head = layers.Conv2DTranspose(self._conv_head.low_channels,
+                                                kernel_size=1,
+                                                strides=(2, 2),
+                                                kernel_initializer=self.kernel_initializer,
+                                                padding='same',
+                                                use_bias=False)
     if self._global_params.dropout_rate > 0:
       self._dropout = tf.keras.layers.Dropout(self._global_params.dropout_rate)
     else:
@@ -627,7 +633,7 @@ class Model(tf.keras.Model):
         high, low = self._conv_stem([inputs, low])
         high = relu_fn(self._bn0_h(high, training=training))
         low = relu_fn(self._bn0_l(low, training=training))
-        low = self.up_sample_stem(low)
+        low = self.upsample_stem(low)
         
         # low = layers.Conv2DTranspose(filters = ,kernel_size = 1, strides = 2, padding='same')
         outputs = layers.Concatenate()([high, low])
