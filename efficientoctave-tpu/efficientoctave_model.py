@@ -123,6 +123,7 @@ class OctConv2D(layers.Layer):
       self.low_to_high = self.return_none
       self.add_highs = self.return_first
       self.add_lows = self.return_first
+      self._upsample_strd3 = self.return_none
     else:
       self.high_to_high = tf.layers.Conv2D(self.high_channels,
                                             kernel_size=self.kernel_size,
