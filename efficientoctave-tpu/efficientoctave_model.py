@@ -65,7 +65,14 @@ class OctConv2D(layers.Layer):
     self.low_channels = int(self.filters * self.alpha)
     # -> High Channles
     self.high_channels = self.filters - self.low_channels
-
+  def pass_layer(self, data):
+    return data
+  def return_none(self, *args):
+    return None
+  def add_values(self, first, second):
+    return first + second
+  def return_first(self, first, second):
+    return first
   def build(self, input_shape):
     assert len(input_shape) == 2
     assert len(input_shape[0]) == 4 and len(input_shape[1]) == 4
@@ -81,6 +88,18 @@ class OctConv2D(layers.Layer):
     high_in = int(input_shape[0][3])
     low_in = int(input_shape[1][3])
     
+    if self.strided:
+      self._pool_strd1 = layers.AveragePooling2D(2)
+      self._pool_strd2 = layers.AveragePooling2D(2)
+      self._pool_strd3 = layers.AveragePooling2D(2)
+      self._pool_strd4 = layers.AveragePooling2D(2)
+      self._upsample_strd3 = self.pass_layer
+    else:
+      self._pool_strd1 = self.pass_layer
+      self._pool_strd2 = self.pass_layer
+      self._pool_strd3 = self.pass_layer
+      self._upsample_strd3 = self.UpSampling2D    
+      self._pool_strd4 = self.pass_layer
     self.upsample = layers.Conv2DTranspose(self.high_channels,
                                               kernel_size=1,
                                               strides=(2, 2),
@@ -100,8 +119,10 @@ class OctConv2D(layers.Layer):
                                               depthwise_initializer=self.kernel_initializer,
                                               padding=self.padding,
                                               use_bias=self.use_bias)
-      self.high_to_low = None
-      self.low_to_high = None
+      self.high_to_low = self.return_none
+      self.low_to_high = self.return_none
+      self.add_highs = self.return_first
+      self.add_lows = self.return_first
     else:
       self.high_to_high = tf.layers.Conv2D(self.high_channels,
                                             kernel_size=self.kernel_size,
@@ -130,53 +151,27 @@ class OctConv2D(layers.Layer):
                                           kernel_initializer=self.kernel_initializer,
                                           padding=self.padding,
                                           use_bias=False)
+      self.add_highs = self.add_values
+      self.add_lows = self.add_values                                          
     super().build(input_shape)
   
   def call(self, inputs):
     # Input = [X^H, X^L]
     assert len(inputs) == 2
     high_input, low_input = inputs
-
-    if self.use_depthwise:         
-      if self.strided:
-        h2h_input = layers.AveragePooling2D(2)(high_input)
-        l2l_input = layers.AveragePooling2D(2)(low_input)
-      else:
-        h2h_input = high_input
-        l2l_input = low_input
-      # High -> High conv
-      high = self.high_to_high(h2h_input)
-      # Low -> Low conv
-      low = self.low_to_low(l2l_input)
-      # Low -> High conv
-      high_from_low = None
-      # High -> Low conv
-      low_from_high = None
-    else:
-      if self.strided:
-        h2h_input = layers.AveragePooling2D(2)(high_input)
-        l2l_input = layers.AveragePooling2D(2)(low_input)
-      else:
-        h2h_input = high_input
-        l2l_input = low_input
-      # High -> High conv
-      high = self.high_to_high(h2h_input)
-      # Low -> Low conv
-      low = self.low_to_low(l2l_input)
-      # Low -> High conv
-      high_from_low = self.low_to_high(low_input)
-      if not self.strided:
-        high_from_low = self.upsample(high_from_low)
-      # High -> Low conv
-      low_from_high = layers.AveragePooling2D(2)(h2h_input)
-      low_from_high = self.high_to_low(low_from_high)
-    # Cross Add
-    if self.use_depthwise:
-      high_add = high
-      low_add = low
-    else:
-      high_add = high + high_from_low
-      low_add = low + low_from_high
+    
+    h2h_input = self._pool_strd1(high_input)
+    l2l_input = self._pool_strd2(low_input)
+    high = self.high_to_high(h2h_input)
+    low = self.low_to_low(l2l_input)
+    
+    high_from_low = self.low_to_high(low_input)
+    high_from_low = self._upsample_strd3(high_from_low)
+    low_from_high = self._pool_strd4(h2h_input)
+    low_from_high = self.high_to_low(low_from_high)
+    
+    high_add = self.add_highs(high, high_from_low)
+    low_add = self.add_lows(low, low_from_high)
     return [high_add, low_add]
 
   def compute_output_shape(self, input_shapes):
@@ -369,35 +364,15 @@ class MBConvBlock(object):
       num_reduced_filters = max(
           1, int(self._block_args.input_filters * self._block_args.se_ratio))
       # Squeeze and Excitation layer.
-      self._se_reduce_h = tf.layers.Conv2D(
+      self._se_reduce = tf.layers.Conv2D(
           num_reduced_filters,
           kernel_size=[1, 1],
           strides=[1, 1],
           kernel_initializer=conv_kernel_initializer,
           padding='same',
           use_bias=True)
-      self._se_reduce_l = tf.layers.Conv2D(
-          num_reduced_filters,
-          kernel_size=[1, 1],
-          strides=[1, 1],
-          kernel_initializer=conv_kernel_initializer,
-          padding='same',
-          use_bias=True)
-      if self._block_args.expand_ratio != 1:
-        high_filters = filters-int(filters*0.125)
-        low_filters = int(filters*0.125)
-      else:
-        high_filters = filters
-        low_filters = filters
-      self._se_expand_h = tf.layers.Conv2D(
-          high_filters,
-          kernel_size=[1, 1],
-          strides=[1, 1],
-          kernel_initializer=conv_kernel_initializer,
-          padding='same',
-          use_bias=True)
-      self._se_expand_l = tf.layers.Conv2D(
-          low_filters,
+      self._se_expand = tf.layers.Conv2D(
+          filters,
           kernel_size=[1, 1],
           strides=[1, 1],
           kernel_initializer=conv_kernel_initializer,
@@ -427,12 +402,6 @@ class MBConvBlock(object):
                                                         kernel_initializer=conv_kernel_initializer,
                                                         padding='same',
                                                         use_bias=False)
-    self.upsample_se_block = layers.Conv2DTranspose(low_filters,
-                                                        kernel_size=1,
-                                                        strides=(2, 2),
-                                                        kernel_initializer=conv_kernel_initializer,
-                                                        padding='same',
-                                                        use_bias=False)
 
   def _call_se(self, input_tensors):
     """Call Squeeze and Excitation layer.
@@ -441,16 +410,11 @@ class MBConvBlock(object):
     Returns:
       A output tensor, which should have the same shape as input.
     """
-    input_high,input_low = input_tensors
-    se_high = tf.reduce_mean(input_high, self._spatial_dims, keepdims=True)
-    se_low = tf.reduce_mean(input_low, self._spatial_dims, keepdims=True)
-    se_high = self._se_expand_h(relu_fn(self._se_reduce_h(se_high)))
-    se_low = self._se_expand_l(relu_fn(self._se_reduce_l(se_low)))
-    se_high = tf.sigmoid(se_high) * input_high
-    se_low = tf.sigmoid(se_low) * input_low
+    se_tensor = tf.reduce_mean(input_tensor, self._spatial_dims, keepdims=True)
+    se_tensor = self._se_expand(relu_fn(self._se_reduce(se_tensor)))
     tf.logging.info('Built Squeeze and Excitation with tensor shape: %s' %
-                    (se_high.shape))
-    return se_high, se_low
+                    (se_tensor.shape))
+    return tf.sigmoid(se_tensor) * input_tensor
 
   def call(self, inputs, training=True, drop_connect_rate=None):
     """Implementation of call().
@@ -463,7 +427,7 @@ class MBConvBlock(object):
     """
     high = inputs
     low = layers.AveragePooling2D(2)(inputs)
-
+    
     tf.logging.info('Block input: %s shape: %s' % (high.name, high.shape))
     if self._block_args.expand_ratio != 1:
       high, low = self._expand_conv([inputs, low])
@@ -471,22 +435,21 @@ class MBConvBlock(object):
       low = relu_fn(self._bn0_l(low, training=training))
     else:
       pass
-
+    
     tf.logging.info('Expand: %s shape: %s' % (high.name, high.shape))
-
+    
     high, low = self._depthwise_conv([high, low])
     high = relu_fn(self._bn1_h(high, training=training))
     low = relu_fn(self._bn1_l(low, training=training))
     tf.logging.info('DWConv: %s shape: %s' % (high.name, high.shape))
-
+    
+    x = layers.Concatenate()([high, low])
     if self.has_se:
       with tf.variable_scope('se'):
-        high, low = self._call_se([high, low])
-        low = self.upsample_se_block(low)
-        concat = layers.Concatenate()([high, low])
-        high = inputs
-        low = layers.AveragePooling2D(2)(inputs)        
-
+        x = self._call_se(x)
+        high = x
+        low = layers.AveragePooling2D(2)(x)        
+    
     self.endpoints = {'expansion_output': high}
     high, low = self._project_conv([high,low])
     high = self._bn2_h(high, training=training)
