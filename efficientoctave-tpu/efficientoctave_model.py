@@ -65,6 +65,12 @@ class OctConv2D(layers.Layer):
     self.low_channels = int(self.filters * self.alpha)
     # -> High Channles
     self.high_channels = self.filters - self.low_channels
+    self.upsample = layers.Conv2DTranspose(self.high_channels,
+                                              kernel_size=1,
+                                              strides=(2, 2),
+                                              kernel_initializer=self.kernel_initializer,
+                                              padding='same',
+                                              use_bias=False)
   def pass_layer(self, data):
     return data
   def return_none(self, *args):
@@ -100,12 +106,6 @@ class OctConv2D(layers.Layer):
       self._pool_strd3 = self.pass_layer
       self._upsample_strd3 = self.upsample    
       self._pool_strd4 = self.pass_layer
-    self.upsample = layers.Conv2DTranspose(self.high_channels,
-                                              kernel_size=1,
-                                              strides=(2, 2),
-                                              kernel_initializer=self.kernel_initializer,
-                                              padding='same',
-                                              use_bias=False)
     # High -> High conv
     if self.use_depthwise:
       self.high_to_high = utils.DepthwiseConv2D(self.kernel_size,
