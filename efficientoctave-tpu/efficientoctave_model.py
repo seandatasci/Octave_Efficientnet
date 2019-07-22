@@ -98,7 +98,7 @@ class OctConv2D(layers.Layer):
       self._pool_strd1 = self.pass_layer
       self._pool_strd2 = self.pass_layer
       self._pool_strd3 = self.pass_layer
-      self._upsample_strd3 = self.UpSampling2D    
+      self._upsample_strd3 = self.upsample    
       self._pool_strd4 = self.pass_layer
     self.upsample = layers.Conv2DTranspose(self.high_channels,
                                               kernel_size=1,
