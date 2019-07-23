@@ -403,6 +403,12 @@ class MBConvBlock(object):
                                                         kernel_initializer=conv_kernel_initializer,
                                                         padding='same',
                                                         use_bias=False)
+    self.up_sample_has_se = layers.Conv2DTranspose(filters = low_filters,
+                                                   kernel_size=1,
+                                                   strides=(2, 2),
+                                                   kernel_initializer=conv_kernel_initializer,
+                                                   padding='same',
+                                                   use_bias=False)
 
   def _call_se(self, input_tensors):
     """Call Squeeze and Excitation layer.
@@ -448,6 +454,7 @@ class MBConvBlock(object):
     if self.has_se:
       with tf.variable_scope('se'):
         x = self._call_se(x)
+        low = self.up_sample_has_se(low)
         high = x
         low = layers.AveragePooling2D(2)(x)        
     
