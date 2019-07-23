@@ -403,6 +403,12 @@ class MBConvBlock(object):
                                                         kernel_initializer=conv_kernel_initializer,
                                                         padding='same',
                                                         use_bias=False)
+    self.upsample_depthwise = layers.Conv2DTranspose(self._depthwise_conv.low_channels,
+                                                        kernel_size=1,
+                                                        strides=(2, 2),
+                                                        kernel_initializer=conv_kernel_initializer,
+                                                        padding='same',
+                                                        use_bias=False)
   def _call_se(self, input_tensors):
     """Call Squeeze and Excitation layer.
     Args:
@@ -442,10 +448,10 @@ class MBConvBlock(object):
     high = relu_fn(self._bn1_h(high, training=training))
     low = relu_fn(self._bn1_l(low, training=training))
     tf.logging.info('DWConv: %s shape: %s' % (high.name, high.shape))
-    
+    low = self.upsample_depthwise(low)
+    x = layers.Concatenate()([high, low])
     if self.has_se:
       with tf.variable_scope('se'):
-        x = layers.Concatenate()([high, low])
         x = self._call_se(x)
         high = x
         low = layers.AveragePooling2D(2)(x)        
