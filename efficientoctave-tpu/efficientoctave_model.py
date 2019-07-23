@@ -409,7 +409,7 @@ class MBConvBlock(object):
                                                         kernel_initializer=conv_kernel_initializer,
                                                         padding='same',
                                                         use_bias=False)
-  def _call_se(self, input_tensors):
+  def _call_se(self, input_tensor):
     """Call Squeeze and Excitation layer.
     Args:
       input_tensors: High and Low tensors for Squeeze/Excitation layer.
@@ -454,7 +454,7 @@ class MBConvBlock(object):
       with tf.variable_scope('se'):
         x = self._call_se(x)
         high = x
-        low = layers.AveragePooling2D(2)(x)        
+        low = layers.AveragePooling2D(2)(x) 
     
     self.endpoints = {'expansion_output': high}
     high, low = self._project_conv([high,low])
