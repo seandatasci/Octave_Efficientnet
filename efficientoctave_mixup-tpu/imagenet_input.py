@@ -138,6 +138,19 @@ class ImageNetTFExampleInput(object):
     # computed according to the input pipeline deployment. See
     # tf.contrib.tpu.RunConfig for details.
     batch_size = params['batch_size']
+    MIXUP = 1
+    if MIXUP:
+      weight = np.random.beta(1.0, 1.0, batch_size)
+      x_weight = weight.reshape(batch_size, 1, 1, 1)
+      y_weight = weight.reshape(batch_size, 1)
+      index = np.random.permutation(batch_size)
+      x1, x2 = images, images[index]
+      x__ = x1 * x_weight + x2 * (1 - x_weight)
+      y1, y2 = labels, labels[index]
+      y__ = y1 * y_weight + y2 * (1 - y_weight)
+      images, labels = x__, y__
+    else:
+      pass
 
     if 'context' in params:
       current_host = params['context'].current_input_fn_deployment()[1]
