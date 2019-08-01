@@ -30,6 +30,31 @@ import tensorflow.keras.backend as K
 #activation function
 relu_fn = tf.nn.swish
 
+def upscale(x, n):
+  """Builds box upscaling (also called nearest neighbors).
+  Args:
+    x: 4D image tensor in B01C format.
+    n: integer scale (must be a power of 2).
+  Returns:
+    4D tensor of images up scaled by a factor n.
+  """
+  if n == 1:
+    return x
+  return tf.batch_to_space(tf.tile(x, [n**2, 1, 1, 1]), [[0, 0], [0, 0]], n)
+
+
+def upsample_tpu(x):
+  """Upscales the width and height of the input vector by a factor of 2."""
+  x = upscale(x, 2)
+  return x
+
+def get_tpu_upsample():
+  def upsample_tpu(x):
+    """Upscales the width and height of the input vector by a factor of 2."""
+    x = upscale(x, 2)
+    return x
+  return upsample_tpu
+
 #octave convolution class including depthwise
 class OctConv2D(layers.Layer):
   def __init__(self, filters, alpha, kernel_size=(3, 3), strides=(1, 1),
@@ -65,12 +90,6 @@ class OctConv2D(layers.Layer):
     self.low_channels = int(self.filters * self.alpha)
     # -> High Channles
     self.high_channels = self.filters - self.low_channels
-    self.upsample = layers.Conv2DTranspose(self.high_channels,
-                                              kernel_size=1,
-                                              strides=(2, 2),
-                                              kernel_initializer=self.kernel_initializer,
-                                              padding='same',
-                                              use_bias=False)
   def pass_layer(self, data):
     return data
   def return_none(self, *args):
@@ -104,7 +123,7 @@ class OctConv2D(layers.Layer):
       self._pool_strd1 = self.pass_layer
       self._pool_strd2 = self.pass_layer
       self._pool_strd3 = self.pass_layer
-      self._upsample_strd3 = self.upsample    
+      self._upsample_strd3 = upsample_tpu
       self._pool_strd4 = self.pass_layer
     # High -> High conv
     if self.use_depthwise:
@@ -360,7 +379,7 @@ class MBConvBlock(object):
         axis=self._channel_axis,
         momentum=self._batch_norm_momentum,
         epsilon=self._batch_norm_epsilon)
-
+    
     if self.has_se:
       num_reduced_filters = max(
           1, int(self._block_args.input_filters * self._block_args.se_ratio))
@@ -379,7 +398,7 @@ class MBConvBlock(object):
           kernel_initializer=conv_kernel_initializer,
           padding='same',
           use_bias=True)
-
+    
     # Output phase:
     filters = self._block_args.output_filters
     self._project_conv = OctConv2D(
@@ -397,18 +416,18 @@ class MBConvBlock(object):
         axis=self._channel_axis,
         momentum=self._batch_norm_momentum,
         epsilon=self._batch_norm_epsilon)
-    self.upsample_project_conv = layers.Conv2DTranspose(self._project_conv.low_channels,
-                                                        kernel_size=1,
-                                                        strides=(2, 2),
-                                                        kernel_initializer=conv_kernel_initializer,
-                                                        padding='same',
-                                                        use_bias=False)
-    self.upsample_depthwise = layers.Conv2DTranspose(self._depthwise_conv.low_channels,
-                                                        kernel_size=1,
-                                                        strides=(2, 2),
-                                                        kernel_initializer=conv_kernel_initializer,
-                                                        padding='same',
-                                                        use_bias=False)
+    self._se_project_conv = tf.layers.Conv2D(
+        filters,
+        kernel_size=[1, 1],
+        strides=[1, 1],
+        kernel_initializer=conv_kernel_initializer,
+        padding='same',
+        use_bias=False)
+    self._se_bn2 = batchnorm(
+        axis=self._channel_axis,
+        momentum=self._batch_norm_momentum,
+        epsilon=self._batch_norm_epsilon)
+
   def _call_se(self, input_tensor):
     """Call Squeeze and Excitation layer.
     Args:
@@ -421,7 +440,7 @@ class MBConvBlock(object):
     tf.logging.info('Built Squeeze and Excitation with tensor shape: %s' %
                     (se_tensor.shape))
     return tf.sigmoid(se_tensor) * input_tensor
-
+  
   def call(self, inputs, training=True, drop_connect_rate=None):
     """Implementation of call().
     Args:
@@ -448,21 +467,21 @@ class MBConvBlock(object):
     high = relu_fn(self._bn1_h(high, training=training))
     low = relu_fn(self._bn1_l(low, training=training))
     tf.logging.info('DWConv: %s shape: %s' % (high.name, high.shape))
-    low = self.upsample_depthwise(low)
-    x = layers.Concatenate()([high, low])
+    
     if self.has_se:
       with tf.variable_scope('se'):
+        low = upsample_tpu(low)
+        x = layers.Concatenate()([high, low])
         x = self._call_se(x)
-        high = x
-        low = layers.AveragePooling2D(2)(x) 
+        x = self._se_bn2(self._se_project_conv(x), training=training)
+        self.endpoints = {'expansion_output': high}
+    else:
+      high, low = self._project_conv([high,low])
+      high = self._bn2_h(high, training=training)
+      low = self._bn2_l(low, training=training)    
+      low = upsample_tpu(low)
+      x = layers.Concatenate()([high, low])
     
-    self.endpoints = {'expansion_output': high}
-    high, low = self._project_conv([high,low])
-    high = self._bn2_h(high, training=training)
-    low = self._bn2_l(low, training=training)
-    
-    low = self.upsample_project_conv(low)
-    x = layers.Concatenate()([high, low])
     if self._block_args.id_skip:
       if all(
           s == 1 for s in self._block_args.strides
@@ -507,7 +526,7 @@ class Model(tf.keras.Model):
           input_filters=round_filters(block_args.input_filters,
                                       self._global_params),
           output_filters=round_filters(block_args.output_filters,
-                                       self._global_params),
+                                      self._global_params),
           num_repeat=round_repeats(block_args.num_repeat, self._global_params))
 
       # The first block needs to take care of stride and filter size increase.
@@ -568,18 +587,6 @@ class Model(tf.keras.Model):
     self._fc = tf.layers.Dense(
         self._global_params.num_classes,
         kernel_initializer=dense_kernel_initializer)
-    self.upsample_stem = layers.Conv2DTranspose(self._conv_stem.low_channels,
-                                                kernel_size=1,
-                                                strides=(2, 2),
-                                                kernel_initializer=conv_kernel_initializer,
-                                                padding='same',
-                                                use_bias=False)
-    self.upsample_head = layers.Conv2DTranspose(self._conv_head.low_channels,
-                                                kernel_size=1,
-                                                strides=(2, 2),
-                                                kernel_initializer=conv_kernel_initializer,
-                                                padding='same',
-                                                use_bias=False)
     if self._global_params.dropout_rate > 0:
       self._dropout = tf.keras.layers.Dropout(self._global_params.dropout_rate)
     else:
@@ -602,9 +609,7 @@ class Model(tf.keras.Model):
         high, low = self._conv_stem([inputs, low])
         high = relu_fn(self._bn0_h(high, training=training))
         low = relu_fn(self._bn0_l(low, training=training))
-        low = self.upsample_stem(low)
-        
-        # low = layers.Conv2DTranspose(filters = ,kernel_size = 1, strides = 2, padding='same')
+        low = upsample_tpu(low)
         outputs = layers.Concatenate()([high, low])
     tf.logging.info('Built stem layers with output shape: %s' % outputs.shape)
     self.endpoints['stem'] = outputs
@@ -642,7 +647,7 @@ class Model(tf.keras.Model):
         high, low = self._conv_head([outputs, low])
         high = relu_fn(self._bn1_h(high, training=training))
         low = relu_fn(self._bn1_l(low, training=training))
-        low = self.upsample_head(low)
+        low = upsample_tpu(low)
         outputs = layers.Concatenate()([high, low])
         outputs = self._avg_pooling(outputs)
         if self._dropout:
