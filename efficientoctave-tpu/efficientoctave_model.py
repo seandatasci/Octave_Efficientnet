@@ -45,13 +45,15 @@ def upscale(x, n):
 
 def upsample_tpu(x):
   """Upscales the width and height of the input vector by a factor of 2."""
-  x = upscale(x, 2)
+  x = K.repeat_elements(x, 2, axis=1) # Nearest Neighbor Upsampling
+  x = K.repeat_elements(x, 2, axis=2)
   return x
 
 def get_tpu_upsample():
   def upsample_tpu(x):
     """Upscales the width and height of the input vector by a factor of 2."""
-    x = upscale(x, 2)
+    x = K.repeat_elements(x, 2, axis=1) # Nearest Neighbor Upsampling
+    x = K.repeat_elements(x, 2, axis=2)
     return x
   return upsample_tpu
 
